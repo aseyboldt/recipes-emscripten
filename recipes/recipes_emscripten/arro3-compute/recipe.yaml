@@ -1,0 +1,69 @@
+context:
+  name: arro3-compute
+  version: 0.9.1
+
+package:
+  name: ${{ name }}
+  version: ${{ version }}
+
+source:
+- url: https://pypi.org/packages/source/${{ name[0] }}/${{ name }}/arro3_compute-${{ version }}.tar.gz
+  sha256: 227ba119b551147c041eca47544902abc709c99e45c48b1eb7d31cc8112dca32
+# the sdist does not ship the license files
+- url: https://raw.githubusercontent.com/kylebarron/arro3/py-v${{ version }}/LICENSE_MIT
+  sha256: a429abe835dbbe9227152b9af6116337bb2609ed15947e3288221abf939b278e
+  file_name: LICENSE_MIT
+- url: https://raw.githubusercontent.com/kylebarron/arro3/py-v${{ version }}/LICENSE_APACHE
+  sha256: 62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a
+  file_name: LICENSE_APACHE
+
+build:
+  number: 0
+
+  files:
+    exclude:
+    - '**/__pycache__/**'
+    - '**/*.pyc'
+  python:
+    skip_pyc_compilation:
+    - '**/*.py'
+
+requirements:
+  build:
+  - python
+  - pip
+  - cross-python_${{ target_platform }}
+  - rust-nightly
+  - maturin
+  host:
+  - python
+  - pip
+  run:
+  - python
+  - arro3-core
+
+tests:
+- script: pytester
+  requirements:
+    build:
+    - pytester
+    run:
+    - pytester-run
+    - numpy
+  files:
+    recipe:
+    - test_arro3_compute.py
+
+about:
+  license: MIT OR Apache-2.0
+  license_file:
+  - LICENSE_MIT
+  - LICENSE_APACHE
+  summary: Rust-based compute kernels for Arrow data in Python
+  homepage: https://kylebarron.dev/arro3
+  repository: https://github.com/kylebarron/arro3
+  documentation: https://kylebarron.dev/arro3
+
+extra:
+  recipe-maintainers:
+  - aseyboldt
