@@ -20,9 +20,10 @@ source:
   - patches/0008-fix-wasm32-array-slice-assignment.patch
   - patches/0009-support-xeus-python-cell-cache.patch
   - patches/0010-disable-parallel-pipeline-on-emscripten.patch
+  - patches/0011-inline-linked-libraries-on-wasm.patch
 
 build:
-  number: 1
+  number: 2
   script: bash $RECIPE_DIR/build.sh
   files:
     exclude:

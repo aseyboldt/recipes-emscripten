@@ -1,0 +1,128 @@
+diff --git a/numba/core/codegen.py b/numba/core/codegen.py
+index 1d52383..1223b90 100644
+--- a/numba/core/codegen.py
++++ b/numba/core/codegen.py
+@@ -709,6 +709,10 @@ class CPUCodeLibrary(CodeLibrary):
+         self._ensure_finalized()
+         if self._shared_module is not None:
+             return self._shared_module
++        self._shared_module = self._build_module_for_linking()
++        return self._shared_module
++
++    def _build_module_for_linking(self, always_clone=False):
+         mod = self._final_module
+         to_fix = []
+         nfuncs = 0
+@@ -723,13 +727,12 @@ class CPUCodeLibrary(CodeLibrary):
+             raise RuntimeError("library unfit for linking: "
+                                "no available functions in %s"
+                                % (self,))
+-        if to_fix:
++        if to_fix or always_clone:
+             mod = mod.clone()
+             for name in to_fix:
+                 # NOTE: this will mark the symbol WEAK if serialized
+                 # to an ELF file
+                 mod.get_function(name).linkage = 'linkonce_odr'
+-        self._shared_module = mod
+         return mod
+ 
+     def add_linking_library(self, library):
+@@ -775,8 +778,12 @@ class CPUCodeLibrary(CodeLibrary):
+ 
+         # Link libraries for shared code
+         # Emscripten loads every library as its own RTLD_GLOBAL WASM
+-        # SIDE_MODULE. Merging those definitions again creates duplicates.
+-        if sys.platform != "emscripten":
++        # SIDE_MODULE, so the linked-in copies must not be exported again
++        # (that creates duplicate symbols). Link them in anyway so that the
++        # optimizer can inline them, but make the copies internal.
++        if sys.platform == "emscripten":
++            self._link_in_wasm_libraries()
++        else:
+             seen = set()
+             for library in self._linking_libraries:
+                 if library not in seen:
+@@ -794,6 +801,51 @@ class CPUCodeLibrary(CodeLibrary):
+         self._final_module.verify()
+         self._finalize_final_module()
+ 
++    def _link_in_wasm_libraries(self):
++        """
++        Link the dependent libraries into the final module like on native
++        targets, then give the linked-in function definitions internal
++        linkage.
++
++        Internalizing has to happen after linking: an internal definition in
++        the source module would not resolve the external declarations in
++        this module. Global variables (e.g. the weak NumbaEnv pointers) are
++        left alone, so they still resolve through the GOT to the definition
++        in the side module that was loaded first.
++        """
++        own_definitions = {
++            fn.name for fn in self._final_module.functions
++            if not fn.is_declaration
++        }
++        linked_definitions = set()
++        seen = set()
++        for library in self._linking_libraries:
++            if library in seen:
++                continue
++            seen.add(library)
++            # Parent inherits reload_init
++            self._reload_init.update(library._reload_init)
++            module = library._get_module_for_linking()
++            linked_definitions.update(
++                fn.name for fn in module.functions if not fn.is_declaration
++            )
++            self._final_module.link_in(module, preserve=True)
++
++        # The linker only copies linkonce_odr definitions that this module
++        # references, so not every linked definition is present here.
++        candidates = linked_definitions - own_definitions
++        internalized = 0
++        for fn in self._final_module.functions:
++            if fn.name in candidates and not fn.is_declaration:
++                fn.linkage = 'internal'
++                internalized += 1
++
++        wasm_trace.log(
++            "llvm",
++            f"module {self.name!r}: linked {len(seen)} library(ies), "
++            f"internalized {internalized} function(s)",
++        )
++
+     def _finalize_dynamic_globals(self):
+         # Scan for dynamic globals
+         for gv in self._final_module.global_variables:
+@@ -820,6 +872,15 @@ class CPUCodeLibrary(CodeLibrary):
+         # Remember this on the module, for the object cache hooks
+         self._final_module.__library = weakref.proxy(self)
+ 
++        # Emitting a WASM object adds "wasm-feature-*" module flags to the
++        # module itself. Take the module for linking before that, otherwise
++        # modules that link it in end up with duplicate module flags.
++        if (sys.platform == "emscripten" and self._shared_module is None
++                and any(True for _ in self._final_module.functions)):
++            self._shared_module = self._build_module_for_linking(
++                always_clone=True,
++            )
++
+         # It seems add_module() must be done only here and not before
+         # linking in other modules, otherwise get_pointer_to_function()
+         # could fail.
+@@ -1241,9 +1302,13 @@ class WasmJitEngine:
+         return name in self._defined_symbols
+ 
+     def _load_defined_symbols(self, module):
++        # Internal and private symbols (e.g. the inlined copies of linked
++        # libraries) are not exported from the side module.
++        hidden = (ll.Linkage.internal, ll.Linkage.private)
+         for values in (module.functions, module.global_variables):
+             self._defined_symbols.update(
+-                value.name for value in values if not value.is_declaration
++                value.name for value in values
++                if not value.is_declaration and value.linkage not in hidden
+             )
+ 
+     def add_module(self, module):

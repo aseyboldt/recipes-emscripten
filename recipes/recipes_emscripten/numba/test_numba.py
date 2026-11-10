@@ -55,6 +55,41 @@ def test_array_jit_and_specialization_cache():
     assert len(vector_add.signatures) == 1
 
 
+def test_njit_callee_is_inlined_into_caller():
+    from numba import njit
+
+    require_global_nrt()
+
+    @njit
+    def scale(x):
+        if x < 0:
+            raise ValueError("negative input")
+        return 2.0 * x
+
+    @njit
+    def total(a):
+        s = 0.0
+        for v in a:
+            s += scale(v)
+        return s
+
+    a = np.arange(5.0)
+    # The callee is also loaded as its own side module and callable directly.
+    assert scale(1.5) == 3.0
+    assert total(a) == 20.0
+    # Exceptions raised by the inlined callee still propagate.
+    with pytest.raises(ValueError, match="negative input"):
+        total(-a - 1)
+
+    # The callee is linked into the caller's module, not imported from the
+    # callee's side module.
+    (ir,) = total.inspect_llvm().values()
+    declarations = [
+        line for line in ir.splitlines() if line.startswith("declare")
+    ]
+    assert not any("scale" in line for line in declarations), declarations
+
+
 def test_array_slice_assignment_on_wasm32():
     from numba import njit
 
