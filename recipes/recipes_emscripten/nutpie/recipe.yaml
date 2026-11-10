@@ -1,0 +1,77 @@
+context:
+  name: nutpie
+  version: 0.17.0
+
+package:
+  name: ${{ name }}
+  version: ${{ version }}
+
+source:
+# TODO: switch to the PyPI sdist once 0.17.0 is released.
+# For now this builds the local dev checkout (relative to this recipe).
+- path: ../../../../../nuts-py
+  filter:
+    include:
+    - Cargo.toml
+    - Cargo.lock
+    - pyproject.toml
+    - README.md
+    - LICENSE
+    - src/**
+    - python/**
+
+build:
+  number: 2
+
+  files:
+    exclude:
+    - '**/__pycache__/**'
+    - '**/*.pyc'
+  python:
+    skip_pyc_compilation:
+    - '**/*.py'
+
+requirements:
+  build:
+  - python
+  - pip
+  - cross-python_${{ target_platform }}
+  - rust-nightly
+  - maturin
+  # the vendored METIS in metis-sys is compiled with emcc via cc-rs
+  - ${{ compiler('c') }}
+  host:
+  - python
+  - pip
+  run:
+  - python
+  - numpy
+  - arro3-core >=0.9.1
+  - arro3-compute >=0.9.1
+  - pandas >=2.0
+  - scipy >=1.11
+  - platformdirs >=3.0.0
+  - xarray >=2025.01.2
+  - arviz >=0.23.0,<2.0
+
+tests:
+- script: pytester
+  requirements:
+    build:
+    - pytester
+    run:
+    - pytester-run
+  files:
+    recipe:
+    - test_nutpie.py
+
+about:
+  license: MIT
+  license_file: LICENSE
+  summary: Sample Stan or PyMC models
+  homepage: https://pymc-devs.github.io/nutpie/
+  repository: https://github.com/pymc-devs/nutpie
+
+extra:
+  recipe-maintainers:
+  - aseyboldt
