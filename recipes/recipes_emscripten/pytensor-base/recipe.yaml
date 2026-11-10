@@ -16,7 +16,7 @@ source:
   - patches/0005-disable-numba-disk-cache-on-emscripten.patch
 
 build:
-  number: 2
+  number: 3
 
   files:
     exclude:
@@ -45,7 +45,7 @@ requirements:
   - python
   - numpy
   - scipy
-  - numba 0.66.*
+  - numba >=0.66,<0.68
   - filelock
   - etuples
   - logical-unification
